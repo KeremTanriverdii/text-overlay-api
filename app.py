@@ -2,8 +2,23 @@ from flask import Flask, request, jsonify
 from PIL import Image, ImageDraw, ImageFont
 import io
 import base64
+import os
 
 app = Flask(__name__)
+
+def get_font(size):
+    # Render (Linux) sistemlerde yaygın bulunan font yolları
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+    ]
+    for path in font_paths:
+        if os.path.exists(path):
+            return ImageFont.truetype(path, size)
+    
+    # Eğer yukarıdakiler yoksa varsayılanı yükle (Yine küçük kalabilir ama sistemde font aramış oluruz)
+    return ImageFont.load_default()
 
 def wrap_text(text, font, max_width):
     words = text.split()
@@ -12,10 +27,11 @@ def wrap_text(text, font, max_width):
     
     for word in words:
         test_line = current_line + (" " if current_line else "") + word
+        # getbbox ile metnin genişliğini ölçüyoruz
         bbox = font.getbbox(test_line)
         width = bbox[2] - bbox[0]
         
-        if width <= max_width - 20:
+        if width <= max_width - 20: # 20px padding
             current_line = test_line
         else:
             if current_line:
@@ -24,12 +40,7 @@ def wrap_text(text, font, max_width):
     
     if current_line:
         lines.append(current_line)
-    
     return lines
-
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({'status': 'ok', 'service': 'text-overlay-api'})
 
 @app.route('/add-text-to-image', methods=['POST'])
 def add_text_to_image():
@@ -40,34 +51,23 @@ def add_text_to_image():
         bubbles = data.get('bubbles', [])
         image_base64 = data.get('image_base64', '')
         
+        # YAZI BOYUTU BURADAN AYARLANIR
+        # 1024x1024 bir görsel için 40-50 idealdir.
+        FONT_SIZE = 45 
+        base_font = get_font(FONT_SIZE)
+        
         if not image_base64:
             return jsonify({'error': 'image_base64 gerekli'}), 400
-        
-        if len(dialogues) == 0:
-            return jsonify({
-                'status': 'no_dialogues',
-                'scene_number': scene_number,
-                'filename': f"sahne-{scene_number}-final.png",
-                'image_base64': image_base64
-            })
         
         img_bytes = base64.b64decode(image_base64)
         img = Image.open(io.BytesIO(img_bytes)).convert('RGBA')
         draw = ImageDraw.Draw(img)
-        base_font = ImageFont.load_default()
         
         for i, dialogue in enumerate(dialogues):
             if i < len(bubbles):
                 bubble = bubbles[i]
             else:
-                bubble = {
-                    'position': {
-                        'x_percent': 10,
-                        'y_percent': 10 + i * 20,
-                        'width_percent': 40,
-                        'height_percent': 20
-                    }
-                }
+                bubble = {'position': {'x_percent': 10, 'y_percent': 10 + i * 20, 'width_percent': 40, 'height_percent': 20}}
             
             pos = bubble['position']
             x = int(pos['x_percent'] / 100.0 * img.width)
@@ -76,7 +76,9 @@ def add_text_to_image():
             h = int(pos['height_percent'] / 100.0 * img.height)
             
             lines = wrap_text(dialogue.strip(), base_font, w)
-            line_height = 18
+            
+            # Satır yüksekliğini font boyutuna göre dinamik yapalım
+            line_height = FONT_SIZE + 5 
             total_text_h = len(lines) * line_height
             start_y = y + (h - total_text_h) // 2
             
@@ -86,19 +88,21 @@ def add_text_to_image():
                 line_x = x + (w - line_w) // 2
                 line_y = start_y + idx * line_height
                 
-                draw.text((line_x + 1, line_y + 1), line, font=base_font, fill=(0, 0, 0, 255))
+                # Siyah kontur (Görünürlüğü artırmak için)
+                for offset in range(2):
+                    draw.text((line_x + offset, line_y + offset), line, font=base_font, fill=(0, 0, 0, 255))
+                
+                # Ana Beyaz Metin
                 draw.text((line_x, line_y), line, font=base_font, fill=(255, 255, 255, 255))
         
         output_buffer = io.BytesIO()
         img.save(output_buffer, format='PNG')
-        output_buffer.seek(0)
         output_b64 = base64.b64encode(output_buffer.getvalue()).decode('utf-8')
         
         return jsonify({
             'status': 'success',
             'scene_number': scene_number,
             'filename': f"sahne-{scene_number}-final.png",
-            'dialogue_count': len(dialogues),
             'image_base64': output_b64
         })
         
