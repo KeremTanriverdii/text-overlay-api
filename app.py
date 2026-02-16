@@ -53,7 +53,7 @@ def add_text_to_image():
         
         # YAZI BOYUTU BURADAN AYARLANIR
         # 1024x1024 bir görsel için 40-50 idealdir.
-        FONT_SIZE = 45 
+        FONT_SIZE = 25 
         base_font = get_font(FONT_SIZE)
         
         if not image_base64:
@@ -78,9 +78,9 @@ def add_text_to_image():
             lines = wrap_text(dialogue.strip(), base_font, w)
             
             # Satır yüksekliğini font boyutuna göre dinamik yapalım
-            line_height = FONT_SIZE + 5 
+            line_height = FONT_SIZE + 3 
             total_text_h = len(lines) * line_height
-            start_y = y + (h - total_text_h) // 2
+            start_y = y + (h - total_text_h) // 1.5
             
             for idx, line in enumerate(lines):
                 bbox = base_font.getbbox(line)
